@@ -23,10 +23,10 @@ def get_hsl(key):
     else:
         return 0, ord(key[0]) % 2, 0
     hue = pos * 1.0 / len(row)
-    if i == 0:
+    if i == 1:
         lit = 0.9
         sat = 1
-    elif i == 1:
+    elif i == 3:
         lit = 0.6
         sat = 0.75
     elif i == 2:
@@ -35,6 +35,9 @@ def get_hsl(key):
     else:
         lit = 0.3
         sat = 1
+    # Force bright yellow hue
+    if 0.12 < hue < 0.33:
+        hue = 0.17
     return hue, sat, lit
 
 def hsl_to_rgb(H, S, L):
@@ -51,7 +54,7 @@ def paint(color, drawing):
         pdb.gimp_edit_bucket_fill(
             drw,
             BUCKET_FILL_FG,
-            LAYER_MODE_MULTIPLY,
+            mode,
             100,
             255,
             False,
@@ -62,32 +65,54 @@ def paint(color, drawing):
 
 
 def keychain(window, event):
-    global x, y
+    global x, y, line_start, mode
 
     val = event.keyval
     name = gtk.gdk.keyval_name(val)
+
+    print(name)
 
     if name == "Escape":
         pdb.gimp_selection_clear(image)
         gtk.mainquit()
 
-    if name in "Left Right Down Up Escape".split():
+    mode = LAYER_MODE_MULTIPLY
+
+    if name in "Left Right Down Up Escape Return Shift_L Shift_R".split():
         drawing = False
         color = (0, 0, 0)
     else:
         drawing = True
     if name == "Left":
         x -= size // 2
+        line_start = x
     if name == "Right":
         x += size // 2
+        line_start = x
     if name == "Down":
         y += size
     if name == "Up":
         y -= size
+    if name == "Return":
+        x = line_start
+        y += size
+
+    if name.isupper():
+        name = name.lower()
+        mode = LAYER_MODE_ADDITION
+
+    color = hsl_to_rgb(*get_hsl(name))
+
+    if name == "space":
+        mode = LAYER_MODE_ADDITION
+        color = 255, 255, 255
+
+    if name == "BackSpace":
+        mode = LAYER_MODE_NORMAL
+        x -= size
+        color = pdb.gimp_context_get_background()
 
     cval = (val - 32) & 0x7
-    # color = bool(cval & 0x4) * 255, bool(cval & 0x2) * 255, bool(cval & 0x1) * 255
-    color = hsl_to_rgb(*get_hsl(name))
 
     paint(color, drawing)
     if drawing:
@@ -99,10 +124,10 @@ def keychain(window, event):
 
 def typewriter(par_image, par_drw):
     global image, drw
-    global x, y
+    global x, y, line_start
     global size, vsize
     size, vsize=30, 60
-    x = y = 0
+    x = y = line_start = 0
     image = par_image
     drw = par_drw
 
