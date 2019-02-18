@@ -145,11 +145,11 @@ register(
         "Joao S. O. Bueno",
         "Joao S. O. Bueno",
         "2019. GPL applies.",
-        "Filters/typewriter",
+        "Color Typewriter",
         "*",
         [(PF_IMAGE, "Image", "Image", None), (PF_DRAWABLE, "Drawable", "Drawable", None), ],
         [],
         typewriter,
-        menu="<Image>")
+        menu="<Image>/Filters")
 
 main()
