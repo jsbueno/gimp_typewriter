@@ -1,4 +1,5 @@
 #!/usr/bin/env python2
+# coding: utf-8
 
 import colorsys
 import math
@@ -16,15 +17,24 @@ bottomrow = "zxcvbnm,."
 
 keys = [numbersrow, toprow, middlerow, bottomrow]
 
+manual_chars = {
+    'dead_acute': '´',
+    'dead_grave': '`',
+    'dead_tilde': '~',
+    'dead_circumflex':'^',
+    'ccedilla': 'ç',
 
-def build_control(label, container, type_=gtk.SpinButton, controls=()):
+}
+
+def build_control(label, container, type_=gtk.HScrollbar, controls=()):
     hbox = gtk.HBox()
     label = gtk.Label(u"%s: " % label)
     hbox.pack_start(label)
-    if type_ == gtk.SpinButton:
+    if issubclass(type_, gtk.Range):
         start, end, step, digits = controls
         ad = gtk.Adjustment(start, start, end, step, step * 3, 0)
-        widget = gtk.SpinButton(ad, 1, digits)
+        widget = type_(ad)
+        widget.set_can_focus(True)
         result = ad
     else:
         result = widget = type_(*controls)
@@ -41,7 +51,6 @@ def get_layer_pos(img, drw):
 class TypeWriter(object):
     def __init__(self, image, drw):
 
-        self.size, self.vsize = 30, 30
         self.x = self.y = self.line_start = 0
         self.image = image
         self.drw = drw
@@ -52,10 +61,13 @@ class TypeWriter(object):
 
         self.fontenize_ad = build_control(u"Fontenize", vbox, controls=(0, 1, 0.1, 1))
 
-        hb1 = gtk.HBox()
-        vbox.pack_start(hb1)
-        self.dance_ad = build_control(u"Dance", hb1, gtk.CheckButton)
-        self.twist_ad = build_control(u"Twist", hb1, gtk.CheckButton)
+        self.dance_ad = build_control(u"Dance", vbox,controls=(0, 1, 0.1, 1) )
+        self.twist_ad = build_control(u"Twist", vbox, controls=(0, 1, 0.1, 1))
+        self.size_ad = build_control(u"Size", vbox, controls=(3, 170, 1, 0))
+        self.size_ad.set_value(30)
+        self.hue_ad = build_control(u"Hue", vbox, controls=(0, 1, 0.1, 1))
+        self.lightness_ad = build_control(u"Light", vbox, controls=(0, 1, 0.1, 1))
+
 
         self.area = build_control(u"Type here", vbox, type_ = gtk.Button, controls=("Press and Type",))
         w.show_all()
@@ -64,8 +76,11 @@ class TypeWriter(object):
         gtk.main()
 
     fontenize = property(lambda self: self.fontenize_ad.get_value())
-    dance = property(lambda self: bool(self.dance_ad.get_state()))
-    twist = property(lambda self: bool(self.twist_ad.get_state()))
+    dance = property(lambda self: self.dance_ad.get_value())
+    twist = property(lambda self: self.twist_ad.get_value())
+    vsize = size = property(lambda self: self.size_ad.get_value())
+    hue = property(lambda self: self.hue_ad.get_value())
+    lightness = property(lambda self: self.lightness_ad.get_value())
 
     def get_hsl(self, key):
         pos = None
@@ -74,7 +89,9 @@ class TypeWriter(object):
                 pos = row.find(key)
                 break
         else:
-            return 0, ord(key[0]) % 2, 0
+            i = ord(key[0]) % 3
+            row = keys[0]
+            pos = ord(key[0]) % 8
         hue = pos * 1.0 / len(row)
         if i == 1:
             lit = 0.9
@@ -88,8 +105,10 @@ class TypeWriter(object):
         else:
             lit = 0.3
             sat = 1
+        hue = (hue + self.hue) % 1
+        lit = (lit + self.lightness) % 1
         # Force bright yellow hue
-        if 0.12 < hue < 0.33:
+        if 0.12 < hue < 0.24:
             hue = 0.17
         return hue, sat, lit
 
@@ -107,7 +126,6 @@ class TypeWriter(object):
         )
         pdb.gimp_context_set_foreground(self.color)
         if self.drawing:
-            # pdb.gimp_edit_fill(drw, FILL_FOREGROUND)
             border = 6
             pdb.gimp_edit_bucket_fill(
                 self.drw,
@@ -115,14 +133,15 @@ class TypeWriter(object):
                 self.mode,
                 100 * (1 - self.fontenize), 255, False, 0, 0
             )
-            if self.fontenize and len(self.key_name) == 1:
+            if self.fontenize and len(self.key_name) <= 2:
                 pdb.gimp_selection_clear(self.image)
                 font_name = pdb.gimp_context_get_font()
-                y =  self.y + (self.vsize - self.size) // 2 - border
+                y =  self.y + (self.vsize - self.size) // 2 - border + self.y_compensation
                 x = self.x
                 if self.dance:
-                    x +=  random.randrange(-self.size // 10, self.size // 10)
-                    y +=  random.randrange(-self.vsize // 10, self.vsize // 10)
+                    get_range = lambda size: random.randrange(int(-size * self.dance), int(size * self.dance))
+                    x +=  get_range(self.size)
+                    y +=  get_range(self.vsize)
                 text_layer = pdb.gimp_text_fontname(
                     self.image, None,
                     x, y,
@@ -138,7 +157,7 @@ class TypeWriter(object):
                 if self.twist:
                     pdb.gimp_item_transform_rotate(
                         text_layer,
-                        math.radians(random.randrange(-15, 15)),
+                        math.radians(random.randrange(int(-180 * self.twist), int(180 * self.twist))),
                         True, 0, 0
                     )
 
@@ -165,7 +184,20 @@ class TypeWriter(object):
         val = event.keyval
         self.key_name = key_name = gtk.gdk.keyval_name(val)
 
-        print(key_name)
+        self.x_compensation = 0
+        self.y_compensation = 0
+        if val < 128 and len(key_name) > 1:
+            self.key_name = key_name = chr(val)
+        if key_name.startswith("dead_") or key_name=="ccedilla":
+            if key_name.startswith("dead_"):
+                self.x_compensation = -self.size // 2
+                if 'tilde' in key_name:
+                    self.y_compensation = -self.size // 2
+            self.key_name = key_name = manual_chars[key_name]
+
+
+
+        print(key_name, val)
 
         if key_name == "Escape":
             pdb.gimp_selection_clear(self.image)
@@ -191,6 +223,9 @@ class TypeWriter(object):
         if key_name == "Return":
             self.x = self.line_start
             self.y += self.size
+        if key_name == "Tab":
+            # Switch focus
+            return False
 
         if key_name.isupper():
             key_name = key_name.lower()
@@ -209,7 +244,7 @@ class TypeWriter(object):
 
         self.paint()
         if self.drawing:
-            self.x += self.size // 2
+            self.x += self.size // 2 + self.x_compensation
             if self.x > self.image.width:
                 self.y += self.vsize
                 self.x = 0
