@@ -48,6 +48,18 @@ def get_layer_pos(img, drw):
     return img.layers.index(drw)
 
 
+class UndoGroup(object):
+    def __init__(self, image):
+        self.image = image
+
+    def __enter__(self):
+        pdb.gimp_image_undo_group_start(self.image)
+        return self.image
+
+    def __exit__(self, exc_type, exc_value, tb):
+        pdb.gimp_image_undo_group_end(self.image)
+
+
 class TypeWriter(object):
     def __init__(self, image, drw):
 
@@ -125,56 +137,59 @@ class TypeWriter(object):
             CHANNEL_OP_REPLACE, True, True, 20
         )
         pdb.gimp_context_set_foreground(self.color)
-        if self.drawing:
-            border = 6
-            pdb.gimp_edit_bucket_fill(
-                self.drw,
-                BUCKET_FILL_FG,
-                self.mode,
-                100 * (1 - self.fontenize), 255, False, 0, 0
+        if not self.drawing:
+            pdb.gimp_displays_flush()
+            return
+
+        border = 6
+        pdb.gimp_edit_bucket_fill(
+            self.drw,
+            BUCKET_FILL_FG,
+            self.mode,
+            100 * (1 - self.fontenize), 255, False, 0, 0
+        )
+        if self.fontenize and len(self.key_name) <= 2:
+            pdb.gimp_selection_clear(self.image)
+            font_name = pdb.gimp_context_get_font()
+            y =  self.y + (self.vsize - self.size) // 2 - border + self.y_compensation
+            x = self.x
+            if self.dance:
+                get_range = lambda size: random.randrange(int(-size * self.dance), int(size * self.dance))
+                x +=  get_range(self.size)
+                y +=  get_range(self.vsize)
+            text_layer = pdb.gimp_text_fontname(
+                self.image, None,
+                x, y,
+                self.key_name,
+                border, True, self.size, 0, font_name
             )
-            if self.fontenize and len(self.key_name) <= 2:
-                pdb.gimp_selection_clear(self.image)
-                font_name = pdb.gimp_context_get_font()
-                y =  self.y + (self.vsize - self.size) // 2 - border + self.y_compensation
-                x = self.x
-                if self.dance:
-                    get_range = lambda size: random.randrange(int(-size * self.dance), int(size * self.dance))
-                    x +=  get_range(self.size)
-                    y +=  get_range(self.vsize)
-                text_layer = pdb.gimp_text_fontname(
-                    self.image, None,
-                    x, y,
-                    self.key_name,
-                    border, True, self.size, 0, font_name
+            blur_amount = 2 + 4 * (1 - self.fontenize)
+            pdb.plug_in_gauss(self.image, text_layer, blur_amount, blur_amount, 1)
+            pdb.gimp_layer_set_opacity(text_layer, 100 * self.fontenize)
+
+            text_layer.mode = self.mode
+
+            if self.twist:
+                pdb.gimp_item_transform_rotate(
+                    text_layer,
+                    math.radians(random.randrange(int(-180 * self.twist), int(180 * self.twist))),
+                    True, 0, 0
                 )
-                blur_amount = 2 + 4 * (1 - self.fontenize)
-                pdb.plug_in_gauss(self.image, text_layer, blur_amount, blur_amount, 1)
-                pdb.gimp_layer_set_opacity(text_layer, 100 * self.fontenize)
-
-                text_layer.mode = self.mode
-
-                if self.twist:
-                    pdb.gimp_item_transform_rotate(
-                        text_layer,
-                        math.radians(random.randrange(int(-180 * self.twist), int(180 * self.twist))),
-                        True, 0, 0
-                    )
 
 
-                # Position text layer just above active layer:
-                while True:
-                    drw_pos = get_layer_pos(self.image, self.drw)
-                    text_pos = get_layer_pos(self.image, text_layer)
+            # Position text layer just above active layer:
+            while True:
+                drw_pos = get_layer_pos(self.image, self.drw)
+                text_pos = get_layer_pos(self.image, text_layer)
 
-                    if (text_pos - drw_pos) == -1:
-                        break
-                    if text_pos > drw_pos:
-                        pdb.gimp_image_raise_item(self.image, text_layer)
-                    else:
-                        pdb.gimp_image_lower_item(self.image, text_layer)
+                if (text_pos - drw_pos) == -1:
+                    break
+                if text_pos > drw_pos:
+                    pdb.gimp_image_raise_item(self.image, text_layer)
+                else:
+                    pdb.gimp_image_lower_item(self.image, text_layer)
 
-                self.drw = pdb.gimp_image_merge_down(self.image, text_layer, CLIP_TO_BOTTOM_LAYER)
+            self.drw = pdb.gimp_image_merge_down(self.image, text_layer, CLIP_TO_BOTTOM_LAYER)
 
         pdb.gimp_displays_flush()
 
@@ -242,7 +257,8 @@ class TypeWriter(object):
             self.x -= self.size
             self.color = pdb.gimp_context_get_background()
 
-        self.paint()
+        with UndoGroup(self.image):
+            self.paint()
         if self.drawing:
             self.x += self.size // 2 + self.x_compensation
             if self.x > self.image.width:
