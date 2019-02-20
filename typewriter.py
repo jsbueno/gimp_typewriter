@@ -16,6 +16,23 @@ bottomrow = "zxcvbnm,."
 keys = [numbersrow, toprow, middlerow, bottomrow]
 
 
+def build_control(label, container, type_=gtk.SpinButton, controls=None):
+    hbox = gtk.HBox()
+    label = gtk.Label(u"%s: " % label)
+    hbox.pack_start(label)
+    if type_ == gtk.SpinButton:
+        start, end, step, digits = controls
+        ad = gtk.Adjustment(start, start, end, step, step * 3, 0)
+        widget = gtk.SpinButton(ad, 1, digits)
+        result = ad
+    else:
+        result = widget = type_(*controls)
+
+    hbox.pack_start(widget)
+    container.pack_start(hbox)
+    return result
+
+
 class TypeWriter(object):
     def __init__(self, image, drw):
 
@@ -25,8 +42,13 @@ class TypeWriter(object):
         self.drw = drw
 
         self.window = w = gtk.Window()
-        w.show()
-        w.connect("key-press-event", self.keychain)
+        vbox = gtk.VBox()
+        self.window.add(vbox)
+
+        self.fontenize = build_control(u"Fontenize", vbox, controls=(0, 1, 0.1, 1))
+        self.area = build_control(u"Type here", vbox, type_ = gtk.Button, controls=("Press and Type",))
+        w.show_all()
+        self.area.connect("key-press-event", self.keychain)
 
         gtk.main()
 
@@ -100,10 +122,10 @@ class TypeWriter(object):
             self.drawing = True
         if key_name == "Left":
             self.x -= self.size // 2
-            self.line_start = x
+            self.line_start = self.x
         if key_name == "Right":
             self.x += self.size // 2
-            self.line_start = x
+            self.line_start = self.x
         if key_name == "Down":
             self.y += self.size
         if key_name == "Up":
@@ -127,14 +149,13 @@ class TypeWriter(object):
             self.x -= self.size
             self.color = pdb.gimp_context_get_background()
 
-        cval = (val - 32) & 0x7
-
         self.paint()
         if self.drawing:
             self.x += self.size // 2
             if self.x > self.image.width:
                 self.y += self.vsize
                 self.x = 0
+        return True
 
 register(
         "typewriter",
