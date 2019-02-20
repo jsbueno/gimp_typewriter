@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 
 import colorsys
+import math
 import random
 
 from gimpfu import *
@@ -16,7 +17,7 @@ bottomrow = "zxcvbnm,."
 keys = [numbersrow, toprow, middlerow, bottomrow]
 
 
-def build_control(label, container, type_=gtk.SpinButton, controls=None):
+def build_control(label, container, type_=gtk.SpinButton, controls=()):
     hbox = gtk.HBox()
     label = gtk.Label(u"%s: " % label)
     hbox.pack_start(label)
@@ -33,10 +34,14 @@ def build_control(label, container, type_=gtk.SpinButton, controls=None):
     return result
 
 
+def get_layer_pos(img, drw):
+    return img.layers.index(drw)
+
+
 class TypeWriter(object):
     def __init__(self, image, drw):
 
-        self.size, self.vsize=30, 60
+        self.size, self.vsize = 30, 30
         self.x = self.y = self.line_start = 0
         self.image = image
         self.drw = drw
@@ -45,12 +50,22 @@ class TypeWriter(object):
         vbox = gtk.VBox()
         self.window.add(vbox)
 
-        self.fontenize = build_control(u"Fontenize", vbox, controls=(0, 1, 0.1, 1))
+        self.fontenize_ad = build_control(u"Fontenize", vbox, controls=(0, 1, 0.1, 1))
+
+        hb1 = gtk.HBox()
+        vbox.pack_start(hb1)
+        self.dance_ad = build_control(u"Dance", hb1, gtk.CheckButton)
+        self.twist_ad = build_control(u"Twist", hb1, gtk.CheckButton)
+
         self.area = build_control(u"Type here", vbox, type_ = gtk.Button, controls=("Press and Type",))
         w.show_all()
         self.area.connect("key-press-event", self.keychain)
 
         gtk.main()
+
+    fontenize = property(lambda self: self.fontenize_ad.get_value())
+    dance = property(lambda self: bool(self.dance_ad.get_state()))
+    twist = property(lambda self: bool(self.twist_ad.get_state()))
 
     def get_hsl(self, key):
         pos = None
@@ -93,19 +108,62 @@ class TypeWriter(object):
         pdb.gimp_context_set_foreground(self.color)
         if self.drawing:
             # pdb.gimp_edit_fill(drw, FILL_FOREGROUND)
+            border = 6
             pdb.gimp_edit_bucket_fill(
                 self.drw,
                 BUCKET_FILL_FG,
                 self.mode,
-                100, 255, False, 0, 0
+                100 * (1 - self.fontenize), 255, False, 0, 0
             )
+            if self.fontenize and len(self.key_name) == 1:
+                pdb.gimp_selection_clear(self.image)
+                font_name = pdb.gimp_context_get_font()
+                y =  self.y + (self.vsize - self.size) // 2 - border
+                x = self.x
+                if self.dance:
+                    x +=  random.randrange(-self.size // 10, self.size // 10)
+                    y +=  random.randrange(-self.vsize // 10, self.vsize // 10)
+                text_layer = pdb.gimp_text_fontname(
+                    self.image, None,
+                    x, y,
+                    self.key_name,
+                    border, True, self.size, 0, font_name
+                )
+                blur_amount = 2 + 4 * (1 - self.fontenize)
+                pdb.plug_in_gauss(self.image, text_layer, blur_amount, blur_amount, 1)
+                pdb.gimp_layer_set_opacity(text_layer, 100 * self.fontenize)
+
+                text_layer.mode = self.mode
+
+                if self.twist:
+                    pdb.gimp_item_transform_rotate(
+                        text_layer,
+                        math.radians(random.randrange(-15, 15)),
+                        True, 0, 0
+                    )
+
+
+                # Position text layer just above active layer:
+                while True:
+                    drw_pos = get_layer_pos(self.image, self.drw)
+                    text_pos = get_layer_pos(self.image, text_layer)
+
+                    if (text_pos - drw_pos) == -1:
+                        break
+                    if text_pos > drw_pos:
+                        pdb.gimp_image_raise_item(self.image, text_layer)
+                    else:
+                        pdb.gimp_image_lower_item(self.image, text_layer)
+
+                self.drw = pdb.gimp_image_merge_down(self.image, text_layer, CLIP_TO_BOTTOM_LAYER)
+
         pdb.gimp_displays_flush()
 
 
     def keychain(self, window, event):
 
         val = event.keyval
-        key_name = gtk.gdk.keyval_name(val)
+        self.key_name = key_name = gtk.gdk.keyval_name(val)
 
         print(key_name)
 
@@ -121,15 +179,15 @@ class TypeWriter(object):
         else:
             self.drawing = True
         if key_name == "Left":
-            self.x -= self.size // 2
+            self.x -= self.size // 4
             self.line_start = self.x
         if key_name == "Right":
-            self.x += self.size // 2
+            self.x += self.size // 4
             self.line_start = self.x
         if key_name == "Down":
-            self.y += self.size
+            self.y += self.vsize // 2
         if key_name == "Up":
-            self.y -= self.size
+            self.y -= self.vsize // 2
         if key_name == "Return":
             self.x = self.line_start
             self.y += self.size
