@@ -94,7 +94,7 @@ class TypeWriter(object):
             pos = ord(key[0]) % 8
         hue = pos * 1.0 / len(row)
         if i == 1:
-            lit = 0.9
+            lit = 0.75
             sat = 1
         elif i == 3:
             lit = 0.6
@@ -103,7 +103,7 @@ class TypeWriter(object):
             lit = 0.5
             sat = 1
         else:
-            lit = 0.3
+            lit = 0.5
             sat = 1
         hue = (hue + self.hue) % 1
         lit = (lit + self.lightness) % 1
